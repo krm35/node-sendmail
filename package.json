@@ -13,11 +13,7 @@
   },
   "dependencies": {
     "dkim-signer": "0.2.2",
-    "mailcomposer": "3.12.0"
-  },
-  "devDependencies": {
-    "ical-toolkit": "^1.0.9",
-    "standard": "latest"
+    "nodemailer": "^6.8.0"
   },
   "contributors": [
     "Gui Lin <guileen@gmail.com>",

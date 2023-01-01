@@ -347,8 +347,8 @@ module.exports = function (options) {
    *
    */
   function sendmail (mail, callback) {
-    const mailcomposer = require('mailcomposer');
-    const mailMe = mailcomposer(mail);
+    const mailcomposer = require('nodemailer/lib/mail-composer');
+    const mailMe = new mailcomposer(mail);
     let recipients = [];
     let groups;
     let srcHost;
@@ -369,7 +369,7 @@ module.exports = function (options) {
     const from = getAddress(mail.from);
     srcHost = getHost(from);
 
-    mailMe.build(function (err, message) {
+    mailMe.compile().build(function (err, message) {
       if (err) {
         logger.error('Error on creating message : ', err);
         callback(err, null);
