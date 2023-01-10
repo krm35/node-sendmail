@@ -1,10 +1,14 @@
-const {createConnection} = require('net');
-const {connect} = require('tls');
-const {resolveMx} = require('dns');
-const {DKIMSign} = require('dkim-signer');
+const { createConnection } = require('net');
+const { connect } = require('tls');
+const { resolveMx } = require('dns');
+const { DKIMSign } = require('dkim-signer');
+const mailcomposer = require('nodemailer/lib/mail-composer');
+const { Encrypter } = require('nodemailer-openpgp');
 const CRLF = '\r\n';
 
-function dummy () {}
+function dummy () {
+}
+
 module.exports = function (options) {
   options = options || {};
   const logger = options.logger || (options.silent && {
@@ -26,7 +30,7 @@ module.exports = function (options) {
   const smtpHost = options.smtpHost || -1;
   const rejectUnauthorized = options.rejectUnauthorized;
   const autoEHLO = options.autoEHLO;
-  
+
   /*
    *   邮件服务返回代码含义 Mail service return code Meaning
    *   500   格式错误，命令不可识别（此错误也包括命令行过长）format error, command unrecognized (This error also includes command line too long)
@@ -66,7 +70,7 @@ module.exports = function (options) {
     const recipients_length = recipients.length;
     for (let i = 0; i < recipients_length; i++) {
       host = getHost(recipients[i]);
-      (groups[host] || (groups[host] = [])).push(recipients[i])
+      (groups[host] || (groups[host] = [])).push(recipients[i]);
     }
     return groups;
   }
@@ -81,50 +85,53 @@ module.exports = function (options) {
           return callback(err);
         }
 
-        data.sort(function (a, b) { return a.priority > b.priority });
+        data.sort(function (a, b) {
+          return a.priority > b.priority;
+        });
         logger.debug('mx resolved: ', data);
 
         if (!data || data.length === 0) {
           return callback(new Error('can not resolve Mx of <' + domain + '>'));
         }
-        if(smtpHost !== -1) data.push({exchange:smtpHost});
-        
+        if (smtpHost !== -1) data.push({ exchange: smtpHost });
+
         function tryConnect (i) {
           if (i >= data.length) return callback(new Error('can not connect to any SMTP server'));
 
           const sock = createConnection(smtpPort, data[i].exchange);
-        
+
           sock.on('error', function (err) {
             logger.error('Error on connectMx for: ', data[i], err);
-            tryConnect(++i)
+            tryConnect(++i);
           });
 
           sock.on('connect', function () {
             logger.debug('MX connection created: ', data[i].exchange);
             sock.removeAllListeners('error');
             callback(null, sock);
-          })
+          });
         }
 
-        tryConnect(0)
-      })
+        tryConnect(0);
+      });
     } else { // development mode -> connect to the specified devPort on devHost
       const sock = createConnection(devPort, devHost);
 
       sock.on('error', function (err) {
-        callback(new Error('Error on connectMx (development) for "'+ devHost +':' + devPort + '": ' + err))
+        callback(new Error('Error on connectMx (development) for "' + devHost + ':' + devPort + '": ' + err));
       });
 
       sock.on('connect', function () {
-        logger.debug('MX (development) connection created: '+ devHost +':' + devPort);
+        logger.debug('MX (development) connection created: ' + devHost + ':' + devPort);
         sock.removeAllListeners('error');
         callback(null, sock);
-      })
+      });
     }
   }
 
   function sendToSMTP (domain, srcHost, from, recipients, body, cb) {
-    const callback = (typeof cb === 'function') ? cb : function () {};
+    const callback = (typeof cb === 'function') ? cb : function () {
+    };
     connectMx(domain, function (err, sock) {
       if (err) {
         logger.error('error on connectMx', err.stack);
@@ -162,13 +169,13 @@ module.exports = function (options) {
       let cmd;
       let upgraded = false;
 
-        /*
-         if(mail.user && mail.pass){
-           queue.push('AUTH LOGIN');
-           login.push(new Buffer(mail.user).toString("base64"));
-           login.push(new Buffer(mail.pass).toString("base64"));
-         }
-         */
+      /*
+       if(mail.user && mail.pass){
+         queue.push('AUTH LOGIN');
+         login.push(new Buffer(mail.user).toString("base64"));
+         login.push(new Buffer(mail.pass).toString("base64"));
+       }
+       */
 
       queue.push('MAIL FROM:<' + from + '>');
       const recipients_length = recipients.length;
@@ -184,7 +191,7 @@ module.exports = function (options) {
           case 220:
             //*   220   on server ready
             //*   220   服务就绪
-            if(upgraded === "in-progress"){
+            if (upgraded === 'in-progress') {
               sock.removeAllListeners('data');
 
               let original = sock;
@@ -197,23 +204,23 @@ module.exports = function (options) {
               };
 
               sock = connect(
-                  opts,
-                  () => {
-                    sock.on('data', function (chunk) {
-                      data += chunk;
-                      parts = data.split(CRLF);
-                      const parts_length = parts.length - 1;
-                      for (let i = 0, len = parts_length; i < len; i++) {
-                        onLine(parts[i])
-                      }
-                      data = parts[parts.length - 1]
-                    });
-      
-                    sock.removeAllListeners('close');
-                    sock.removeAllListeners('end');
+                opts,
+                () => {
+                  sock.on('data', function (chunk) {
+                    data += chunk;
+                    parts = data.split(CRLF);
+                    const parts_length = parts.length - 1;
+                    for (let i = 0, len = parts_length; i < len; i++) {
+                      onLine(parts[i]);
+                    }
+                    data = parts[parts.length - 1];
+                  });
 
-                    return;
-                  }
+                  sock.removeAllListeners('close');
+                  sock.removeAllListeners('end');
+
+                  return;
+                }
               );
 
               sock.on('error', function (err) {
@@ -222,10 +229,9 @@ module.exports = function (options) {
 
               original.resume();
               upgraded = true;
-              w("EHLO " + srcHost);
+              w('EHLO ' + srcHost);
               break;
-            } else
-            {
+            } else {
               if (/\besmtp\b/i.test(msg) || autoEHLO) {
                 // TODO:  determin AUTH type; auth login, auth crm-md5, auth plain
                 cmd = 'EHLO';
@@ -235,7 +241,7 @@ module.exports = function (options) {
               }
               w(cmd + ' ' + srcHost);
               break;
-            } 
+            }
 
           case 221: // bye
             sock.end();
@@ -243,14 +249,14 @@ module.exports = function (options) {
             break;
           case 235: // verify ok
           case 250: // operation OK
-            if(upgraded != true){
-              if(/\bSTARTTLS\b/i.test(msg)){
+            if (upgraded != true) {
+              if (/\bSTARTTLS\b/i.test(msg)) {
                 w('STARTTLS');
-                upgraded = "in-progress";
+                upgraded = 'in-progress';
               } else {
                 upgraded = true;
               }
-              
+
               break;
             }
 
@@ -292,14 +298,14 @@ module.exports = function (options) {
         msg += (line + CRLF);
 
         if (line[3] === ' ') {
-            // 250-information dash is not complete.
-            // 250 OK. space is complete.
+          // 250-information dash is not complete.
+          // 250 OK. space is complete.
           let lineNumber = parseInt(line.substr(0, 3));
           response(lineNumber, msg);
           msg = '';
         }
       }
-    })
+    });
   }
 
   function getAddress (address) {
@@ -346,9 +352,7 @@ module.exports = function (options) {
    * @param callback function(err, domain).
    *
    */
-  function sendmail (mail, callback) {
-    const mailcomposer = require('nodemailer/lib/mail-composer');
-    const mailMe = new mailcomposer(mail);
+  async function sendmail (mail, callback) {
     let recipients = [];
     let groups;
     let srcHost;
@@ -369,12 +373,9 @@ module.exports = function (options) {
     const from = getAddress(mail.from);
     srcHost = getHost(from);
 
-    mailMe.compile().build(function (err, message) {
-      if (err) {
-        logger.error('Error on creating message : ', err);
-        callback(err, null);
-        return
-      }
+    try {
+      let message = mail.message || await buildMessage(mail);
+      if (mail.encryptionKeys) message = await encrypt(message, mail.encryptionKeys);
       if (dkimPrivateKey) {
         const signature = DKIMSign(message, {
           privateKey: dkimPrivateKey,
@@ -386,7 +387,30 @@ module.exports = function (options) {
       for (let domain in groups) {
         sendToSMTP(domain, srcHost, from, groups[domain], message, callback);
       }
+    } catch (err) {
+      logger.error('Error on creating message : ', err);
+      callback(err, null);
+    }
+  }
+
+  function buildMessage (mail) {
+    return new Promise((resolve, reject) => {
+      new mailcomposer(mail).compile().build((err, message) => {
+        if (err) reject(err);
+        else resolve(message);
+      });
     });
   }
+
+  function encrypt (message, encryptionKeys) {
+    return new Promise((resolve, reject) => {
+      const signer = new Encrypter({ encryptionKeys }), chunks = [];
+      signer.on('data', chunk => chunks.push(chunk));
+      signer.on('err', err => reject(err));
+      signer.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      signer.end(message);
+    });
+  }
+
   return sendmail;
 };
